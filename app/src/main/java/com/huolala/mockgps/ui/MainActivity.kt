@@ -1,245 +1,188 @@
 package com.huolala.mockgps.ui
 
 import android.Manifest
-import android.content.DialogInterface
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.baidu.mapapi.model.LatLng
-import com.baidu.mapapi.search.route.DrivingRouteLine
-import com.blankj.utilcode.util.ClipboardUtils
 import com.blankj.utilcode.util.ConvertUtils
 import com.blankj.utilcode.util.PermissionUtils
 import com.blankj.utilcode.util.ToastUtils
 import com.castiel.common.base.BaseActivity
-import com.google.android.material.appbar.AppBarLayout
 import com.huolala.mockgps.R
-import com.huolala.mockgps.adaper.MainAdapter
-import com.huolala.mockgps.adaper.MultiplePoiAdapter
-import com.huolala.mockgps.adaper.SimpleDividerDecoration
 import com.huolala.mockgps.databinding.ActivityMainBinding
-import com.huolala.mockgps.manager.SearchManager
 import com.huolala.mockgps.model.MockMessageModel
 import com.huolala.mockgps.model.NaviType
 import com.huolala.mockgps.model.PoiInfoModel
-import com.huolala.mockgps.model.PoiInfoType
-import com.huolala.mockgps.utils.MMKVUtils
 import com.huolala.mockgps.utils.Utils
 import com.huolala.mockgps.utils.WarnDialogUtils
 import com.huolala.mockgps.viewmodel.HomeViewModel
-import com.huolala.mockgps.widget.GuideView
-import com.huolala.mockgps.widget.InputLatLngDialog
 import com.huolala.mockgps.widget.MapSelectDialog
-import com.huolala.mockgps.widget.NaviPopupWindow
-import kotlin.math.abs
-import kotlin.math.roundToInt
-
+import java.util.*
+import kotlin.math.*
+import kotlin.random.Random
 
 /**
  * @author jiayu.liu
  */
-class MainActivity : BaseActivity<ActivityMainBinding, HomeViewModel>(), View.OnClickListener {
+class MainActivity : BaseActivity<ActivityMainBinding, HomeViewModel>() {
     private var topMarginOffset: Int = 0
     private var topMargin: Int = 0
-    private lateinit var adapter: MainAdapter
     private var mMapSelectDialog: MapSelectDialog? = null
     private var locationAlwaysView: View? = null
-    private lateinit var poiAdapter: MultiplePoiAdapter
-    private val mSearchManagerListener = object : SearchManager.SearchManagerListener {
-        override fun onDrivingRouteResultLines(routeLines: List<DrivingRouteLine>?) {
-            viewModel.loading.value = false
-            if (routeLines?.isEmpty() != false) {
-                ToastUtils.showShort("路线规划数据获取失败,请检测网络or数据是否正确!")
-                return
-            }
-            val currentList = poiAdapter.currentList()
-            val startNavi = currentList[0]
-            val endNavi = currentList[currentList.size - 1]
-            val wayList = if (currentList.size > 2) {
-                currentList.toMutableList().subList(1, currentList.size - 1)
-            } else null
-
-            val model = MockMessageModel(
-                startNavi = startNavi,
-                endNavi = endNavi,
-                wayNaviList = wayList,
-                naviType = NaviType.NAVI,
-                speed = MMKVUtils.getSpeed(),
-                uid = (startNavi.uid ?: "") + (endNavi.uid ?: "") + (wayList?.map { it.uid }
-                    ?.joinToString("") ?: "")
-            )
-
-            if (routeLines.size == 1) {
-                goToMockLocation(routeLines[0], model)
-            } else {
-                mMapSelectDialog = MapSelectDialog(
-                    this@MainActivity,
-                    routeLines,
-                    startNavi.latLng,
-                    endNavi.latLng,
-                    wayList
-                ).apply {
-                    listener = object : MapSelectDialog.MapSelectDialogListener {
-                        override fun onSelectLine(routeLine: DrivingRouteLine) {
-                            goToMockLocation(routeLine, model)
-                            mMapSelectDialog = null
-                        }
-                    }
-                    show()
-                }
-            }
-
-        }
-    }
-
-    private var registerForActivityResult =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            if (it.resultCode == RESULT_OK) {
-                it.data?.run {
-                    val index = getIntExtra("index", -1)
-                    val parcelableExtra = this.getParcelableExtra<PoiInfoModel>("poiInfo")
-                    setDataToView(index, parcelableExtra)
-                }
-            }
-        }
 
     override fun initView() {
-        dataBinding.title = "模拟定位"
-        dataBinding.clickListener = this
         topMarginOffset = -ConvertUtils.dp2px(50f)
         topMargin = ConvertUtils.dp2px(15f)
-
-        poiAdapter = MultiplePoiAdapter().apply {
-            submitList(
-                arrayListOf(
-                    PoiInfoModel(),
-                    PoiInfoModel(),
-                )
-            )
-
-            clickListener = object : MultiplePoiAdapter.OnItemClickListener {
-                override fun onItemClick(view: View, position: Int) {
-                    registerForActivityResult.launch(
-                        Intent(
-                            this@MainActivity,
-                            PickMapPoiActivity::class.java
-                        ).apply {
-                            putExtra("from_tag", PoiInfoType.DEFAULT)
-                            putExtra("index", position)
-                            putExtra("model", poiAdapter.currentList()[position])
-                        }
-                    )
-                }
-
-                override fun onItemMove() {
-                    adapter.onItemMove()
-                }
+        dataBinding.btnStartNavi.setOnClickListener {
+            val lat = dataBinding.latInput.text.toString()
+            val lng = dataBinding.lngInput.text.toString()
+            if(lat.isEmpty() || lng.isEmpty())
+            {
+                Toast.makeText(this@MainActivity, "模拟位置不能为null", Toast.LENGTH_SHORT)
+                    .show()
+                return@setOnClickListener
             }
-        }
-        adapter = MainAdapter(poiAdapter).apply {
-            setOnItemClickListener(object : MainAdapter.OnItemClickListener {
-                override fun onItemClick(view: View?, model: MockMessageModel) {
-                    when (model.naviType) {
-                        NaviType.LOCATION -> {
-                            setDataToView(model = model.locationModel)
-                            with(this@MainActivity.dataBinding) {
-                                appBarLayout.setExpanded(true, true)
-                                recycler.scrollToPosition(0)
-                            }
-                        }
-
-                        NaviType.NAVI -> {
-                            val list = arrayListOf<PoiInfoModel>()
-                            list.add(model.startNavi ?: PoiInfoModel())
-                            model.wayNaviList?.let {
-                                list.addAll(it)
-                            }
-                            list.add(model.endNavi ?: PoiInfoModel())
-                            poiAdapter.submitList(list)
-
-                            with(this@MainActivity.dataBinding) {
-                                appBarLayout.setExpanded(true, true)
-                                recycler.scrollToPosition(0)
-                            }
-
-                        }
-
-                        else -> {
-                        }
-                    }
-                }
-
-                override fun onClick(v: View?) {
-                    this@MainActivity.onClick(v)
-                }
-
-            })
-        }
-        dataBinding.recycler.adapter = adapter
-        dataBinding.recycler.itemAnimator = null
-        dataBinding.recycler.layoutManager = LinearLayoutManager(this)
-        dataBinding.recycler.addItemDecoration(
-            SimpleDividerDecoration(
-                this,
-                R.color.transparent,
-                10f
-            )
-        )
-
-        //引导
-        if (!MMKVUtils.isGuideVisible()) {
-            dataBinding.ivExpand.post {
-                val rootView = dataBinding.root as ViewGroup
-                val guideView = GuideView(this)
-                guideView.setGuideView(dataBinding.ivExpand)
-
-                rootView.addView(
-                    guideView,
-                    FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT
-                    )
-                )
-            }
+            startMotion(lat.toDouble(),lng.toDouble())
         }
 
-        dataBinding.appBarLayout.addOnOffsetChangedListener(AppBarLayout.OnOffsetChangedListener { appBarLayout, verticalOffset ->
-            appBarLayout?.run {
-                val scale = abs(verticalOffset * 1.0f / appBarLayout.totalScrollRange)
-                val params =
-                    dataBinding.recycler.layoutParams as ViewGroup.MarginLayoutParams
-                val topMarginOffsetValue = (topMarginOffset * (1 - scale)).roundToInt()
-                val topMarginValue = (topMargin * scale).roundToInt()
-                params.topMargin = topMarginOffsetValue + topMarginValue
-                dataBinding.recycler.layoutParams = params
+        dataBinding.btnStartNavi0.setOnClickListener {
+            val latlng = dataBinding.latlngInput.text.toString()
+            if(latlng.isEmpty())
+            {
+                Toast.makeText(this@MainActivity, "模拟位置不能为null", Toast.LENGTH_SHORT)
+                    .show()
+                return@setOnClickListener
             }
-        })
+            val latlngDatas = latlng.split(",")
+            if(latlngDatas.size != 2)
+            {
+                Toast.makeText(this@MainActivity, "格式不正确", Toast.LENGTH_SHORT)
+                    .show()
+                return@setOnClickListener
+            }
+            startMotion(latlngDatas[0].toDouble(),latlngDatas[1].toDouble())
+        }
+
+        dataBinding.btnStartNavi1.setOnClickListener {
+            val lnglat = dataBinding.lnglatInput.text.toString()
+            if(lnglat.isEmpty())
+            {
+                Toast.makeText(this@MainActivity, "模拟位置不能为null", Toast.LENGTH_SHORT)
+                    .show()
+                return@setOnClickListener
+            }
+            val lnglatDatas = lnglat.split(",")
+            if(lnglatDatas.size != 2)
+            {
+                Toast.makeText(this@MainActivity, "格式不正确", Toast.LENGTH_SHORT)
+                    .show()
+                return@setOnClickListener
+            }
+            startMotion(lnglatDatas[1].toDouble(),lnglatDatas[0].toDouble())
+        }
+
+        dataBinding.chengkunButton.setOnClickListener {
+            val baseLat = 39.12793123
+            val baseLng = 117.28209674
+
+            val randomPoint = getRandomNearbyPoint(baseLat, baseLng)
+            startMotion(randomPoint.first,randomPoint.second)
+        }
+
+        dataBinding.wandongButton.setOnClickListener {
+            val baseLat = 39.13634783
+            val baseLng = 117.26727190
+
+            val randomPoint = getRandomNearbyPoint(baseLat, baseLng)
+            startMotion(randomPoint.first,randomPoint.second)
+        }
+
+        dataBinding.qinjianButton.setOnClickListener {
+            val baseLat = 39.18157062
+            val baseLng = 117.15031129
+
+            val randomPoint = getRandomNearbyPoint(baseLat, baseLng)
+            startMotion(randomPoint.first,randomPoint.second)
+        }
+
+        dataBinding.baodiButton.setOnClickListener {
+            val baseLat = 39.55431882
+            val baseLng = 117.39548797
+
+            val randomPoint = getRandomNearbyPoint(baseLat, baseLng)
+            startMotion(randomPoint.first,randomPoint.second)
+        }
+
+        dataBinding.beichenButton.setOnClickListener {
+            val baseLat = 39.22705531
+            val baseLng = 117.25168738
+
+            val randomPoint = getRandomNearbyPoint(baseLat, baseLng)
+            startMotion(randomPoint.first,randomPoint.second)
+        }
+
+        dataBinding.openWeb.setOnClickListener {
+            val intent = Intent(Intent.ACTION_VIEW)
+            intent.data = Uri.parse("https://jingweidu.bmcx.com/")
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "未安装浏览器应用", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
-    private fun goToMockLocation(
-        routeLine: DrivingRouteLine,
-        model: MockMessageModel
-    ) {
-        SearchManager.INSTANCE.selectDriverLine(routeLine)
-        val intent =
-            Intent(this@MainActivity, MockLocationActivity::class.java)
-        intent.putExtra("model", model)
-        startActivity(intent)
-        MMKVUtils.saveNaviData(model)
+    private val EARTH_RADIUS = 6371000.0 // 地球半径(米)
+    private val MAX_DISTANCE = 80.0 // 最大距离80米
+
+    // 生成随机距离（0-80米）和随机角度（0-360度）
+    private fun getRandomPolarCoords(): Pair<Double, Double> {
+        val distance = Random.nextDouble(MAX_DISTANCE)
+        val angle = Random.nextDouble(360.0)
+        return distance to angle
     }
 
+    // 计算随机偏移后的坐标
+    fun getRandomNearbyPoint(lat: Double, lng: Double): Pair<Double, Double> {
+        val (distance, angle) = getRandomPolarCoords()
+        val radAngle = angle * PI / 180
+
+        // 纬度偏移（南北方向）
+        val latOffset = distance * cos(radAngle) / EARTH_RADIUS * 180 / PI
+        // 经度偏移（东西方向）
+        val lngOffset = distance * sin(radAngle) / (EARTH_RADIUS * cos(lat * PI / 180)) * 180 / PI
+
+        return Pair(lat + latOffset, lng + lngOffset)
+    }
+
+    private fun startMotion(lat: Double,lng:Double)
+    {
+        //启动模拟导航
+        Utils.checkFloatWindow(this).let {
+            if (!it) {
+                WarnDialogUtils.setFloatWindowDialog(this@MainActivity)
+                return
+            }
+            val latLng = LatLng(lat,lng)
+            val locationModel = PoiInfoModel(latLng,UUID.randomUUID().toString())
+            val model = MockMessageModel(
+                locationModel = locationModel,
+                naviType = NaviType.LOCATION,
+                uid = locationModel?.uid ?: ""
+            )
+            val intent = Intent(this, MockLocationActivity::class.java)
+            intent.putExtra("model", model)
+            startActivity(intent)
+        }
+    }
 
     override fun initViewModel(): Class<HomeViewModel> {
         return HomeViewModel::class.java
@@ -250,8 +193,6 @@ class MainActivity : BaseActivity<ActivityMainBinding, HomeViewModel>(), View.On
     }
 
     override fun initData() {
-        //检测是否有新版本
-        viewModel.checkAppUpdate()
     }
 
     override fun initObserver() {
@@ -262,9 +203,6 @@ class MainActivity : BaseActivity<ActivityMainBinding, HomeViewModel>(), View.On
 
     override fun onResume() {
         super.onResume()
-        SearchManager.INSTANCE.addSearchManagerListener(mSearchManagerListener)
-        //获取历史数据
-        dataBinding.recycler.post { getHistoryData() }
         mMapSelectDialog?.onResume()
         //后台定位提示
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -310,212 +248,9 @@ class MainActivity : BaseActivity<ActivityMainBinding, HomeViewModel>(), View.On
 
     override fun onPause() {
         super.onPause()
-        SearchManager.INSTANCE.removeSearchManagerListener(mSearchManagerListener)
         mMapSelectDialog?.onPause()
     }
 
-    private fun getHistoryData() {
-        MMKVUtils.getDataList(
-            if (adapter.dataBinding.includeLocationCard.llLocationCard.visibility == View.VISIBLE) MMKVUtils.LOCATION_LIST_KEY
-            else MMKVUtils.MULTIPLE_NAVI_LIST_KEY
-        )?.let {
-            adapter.submitList(it)
-        } ?: run {
-            adapter.submitList(arrayListOf())
-        }
-    }
-
-    private fun clearHistoryData() {
-        adapter.submitList(arrayListOf())
-        MMKVUtils.clearDataList(
-            if (adapter.dataBinding.includeLocationCard.llLocationCard.visibility == View.VISIBLE) MMKVUtils.LOCATION_LIST_KEY
-            else MMKVUtils.MULTIPLE_NAVI_LIST_KEY
-        )
-    }
-
-    private fun setDataToView(index: Int = -1, model: PoiInfoModel?) {
-        model?.let {
-            when (it.poiInfoType) {
-                PoiInfoType.LOCATION -> {
-                    adapter.dataBinding.includeLocationCard.tvLocationName.text = String.format(
-                        "目标：%s",
-                        it.name
-                    )
-                    adapter.dataBinding.includeLocationCard.tvLocationLatlng.text = String.format(
-                        "经纬度：%f , %f",
-                        it.latLng?.longitude, it.latLng?.latitude
-                    )
-                    adapter.dataBinding.includeLocationCard.tvLocationLatlng.tag = it
-                }
-
-                else -> {
-                    poiAdapter.submitList(
-                        poiAdapter.currentList().toMutableList().apply {
-                            set(index, it)
-                        }
-                    )
-                }
-            }
-        }
-    }
-
-    override fun onClick(v: View?) {
-        when (v) {
-            dataBinding.ivExpand -> {
-                startActivity(Intent(this, ExpandActivity::class.java))
-            }
-
-            adapter.dataBinding.includeLocationCard.llLocationCard -> {
-                registerForActivityResult.launch(
-                    Intent(
-                        this@MainActivity,
-                        PickMapPoiActivity::class.java
-                    ).apply {
-                        putExtra("from_tag", PoiInfoType.LOCATION)
-                        if (adapter.dataBinding.includeLocationCard.tvLocationLatlng.tag != null) {
-                            putExtra(
-                                "model",
-                                adapter.dataBinding.includeLocationCard.tvLocationLatlng.tag as PoiInfoModel?
-                            )
-                        }
-                    }
-                )
-            }
-
-            adapter.dataBinding.includeLocationCard.btnStartLocation -> {
-                if (adapter.dataBinding.includeLocationCard.tvLocationLatlng.tag == null) {
-                    Toast.makeText(this@MainActivity, "模拟位置不能为null", Toast.LENGTH_SHORT)
-                        .show()
-                    return
-                }
-                //启动模拟导航
-                Utils.checkFloatWindow(this).let {
-                    if (!it) {
-                        WarnDialogUtils.setFloatWindowDialog(this@MainActivity)
-                        return
-                    }
-                    val locationModel =
-                        adapter.dataBinding.includeLocationCard.tvLocationLatlng.tag as PoiInfoModel?
-                    val model = MockMessageModel(
-                        locationModel = locationModel,
-                        naviType = NaviType.LOCATION,
-                        uid = locationModel?.uid ?: ""
-                    )
-                    val intent = Intent(this, MockLocationActivity::class.java)
-                    intent.putExtra("model", model)
-                    startActivity(intent)
-
-                    MMKVUtils.saveLocationData(model)
-                }
-            }
-
-            dataBinding.ivChange -> {
-                if (adapter.dataBinding.includeLocationCard.llLocationCard.visibility == View.VISIBLE) {
-                    adapter.dataBinding.includeLocationCard.llLocationCard.visibility = View.GONE
-                    adapter.dataBinding.includeNaviCard.llNaviCard.visibility = View.VISIBLE
-                    dataBinding.title = "模拟导航"
-                    dataBinding.isNavi = true
-                } else {
-                    adapter.dataBinding.includeLocationCard.llLocationCard.visibility = View.VISIBLE
-                    adapter.dataBinding.includeNaviCard.llNaviCard.visibility = View.GONE
-                    dataBinding.title = "模拟定位"
-                    dataBinding.isNavi = false
-                }
-                dataBinding.appBarLayout.setExpanded(true, true)
-                dataBinding.recycler.scrollToPosition(0)
-                getHistoryData()
-            }
-
-            dataBinding.ivNaviAdd -> {
-                poiAdapter.currentList().toMutableList().apply {
-                    if (size >= 5) {
-                        ToastUtils.showShort("最多只能添加5个")
-                        return
-                    }
-                    this.add(size - 1, PoiInfoModel())
-                    poiAdapter.submitList(this)
-                }
-
-            }
-
-            adapter.dataBinding.includeNaviCard.btnStartNavi -> {
-                val currentList = poiAdapter.currentList()
-                for (poiInfoModel in currentList) {
-                    if (poiInfoModel.latLng == null) {
-                        ToastUtils.showShort("模拟位置不能为null")
-                        return
-                    }
-                }
-                Utils.checkFloatWindow(this).let {
-                    if (!it) {
-                        WarnDialogUtils.setFloatWindowDialog(this@MainActivity)
-                        return
-                    }
-                    val startNavi = currentList[0]
-                    val endNavi = currentList[currentList.size - 1]
-                    val wayList = arrayListOf<LatLng>()
-                    if (currentList.size > 2) {
-                        for ((index, poiInfoModel) in currentList.withIndex()) {
-                            if (index == 0 || index == currentList.size - 1) {
-                                continue
-                            }
-                            wayList.add(poiInfoModel.latLng!!)
-                        }
-                    }
-                    viewModel.loading.value = true
-                    SearchManager.INSTANCE.driverSearch(
-                        startNavi.latLng!!,
-                        endNavi.latLng!!,
-                        adapter.dataBinding.includeNaviCard.radioMultiRoute.isChecked,
-                        if (wayList.isNotEmpty()) wayList else null
-                    )
-                }
-            }
-
-            adapter.dataBinding.includeNaviCard.ivNaviSetting -> {
-                //导航设置
-                NaviPopupWindow(this).apply {
-                    show(adapter.dataBinding.includeNaviCard.ivNaviSetting)
-                }
-            }
-
-            dataBinding.ivAppUpdate -> {
-                viewModel.updateApp.value?.let {
-                    val dialog: AlertDialog = AlertDialog.Builder(this)
-                        .setTitle("有新的版本")
-                        .setMessage(
-                            if (!TextUtils.isEmpty(it.buildUpdateDescription)) it.buildUpdateDescription else "修复已知问题"
-                        )
-                        .setPositiveButton(
-                            "确定"
-                        ) { _: DialogInterface?, _: Int ->
-                            Utils.openBrowser(
-                                this,
-                                it.appURl
-                            ) {
-                                viewModel.toast.value = "跳转失败,已将下载地址复制到剪切板!"
-                                ClipboardUtils.copyText(it.appURl)
-                            }
-                        }
-                        .setNegativeButton("取消", null)
-                        .setNeutralButton(
-                            "复制下载地址"
-                        ) { _, _ -> ClipboardUtils.copyText(it.appURl) }
-                        .create()
-                    dialog.setCanceledOnTouchOutside(false)
-                    dialog.show()
-                }
-            }
-
-            adapter.dataBinding.tvCleanCache -> {
-                //清除缓存
-                clearHistoryData()
-            }
-
-            else -> {
-            }
-        }
-    }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
