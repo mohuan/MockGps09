@@ -129,6 +129,13 @@ class MainActivity : BaseActivity<ActivityMainBinding, HomeViewModel>() {
             startMotion(randomPoint.first,randomPoint.second)
         }
 
+        dataBinding.jiaoguanButton.setOnClickListener {
+            val baseLat = 39.12022706
+            val baseLng = 117.2086891
+            val randomPoint = getRandomNearbyPoint(baseLat, baseLng)
+            startMotion(randomPoint.first,randomPoint.second)
+        }
+
         dataBinding.openWeb.setOnClickListener {
             val intent = Intent(Intent.ACTION_VIEW)
             intent.data = Uri.parse("https://jingweidu.bmcx.com/")

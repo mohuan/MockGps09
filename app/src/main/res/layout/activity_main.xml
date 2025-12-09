@@ -309,6 +309,25 @@
         app:layout_constraintLeft_toRightOf="@+id/baodi_button"
         />
 
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/jiaoguan_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/shape_round_30_color_master"
+            android:drawablePadding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="5dp"
+            android:textColor="@color/white"
+            android:text="市交管"
+            android:textSize="13sp"
+            app:layout_constraintTop_toBottomOf="@+id/qinjian_button"
+            app:layout_constraintLeft_toRightOf="@+id/beichen_button"
+            />
+
     <androidx.appcompat.widget.AppCompatButton
         android:id="@+id/open_web"
         android:layout_width="wrap_content"
